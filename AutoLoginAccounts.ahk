@@ -3,9 +3,42 @@ ClientWindowTitle := "Glyph"
 LoginWindowTitle := "Glyph Anmeldung" ; This is the German translation of "Glyph Login"
 TargetWindowTitle := "Trove"
 
-; Define account credentials (email and password for multiple accounts)
-Emails := ["exampel1@gmail.com", "exampel2@gmail.com", "exampel3@gmail.com", "exampel4@gmail.com", "exampel5@gmail.com", "exampel6@gmail.com"]
-Passwords := ["pw1", "pw2", "pw3", "pw4", "pw5", "pw6"]
+; Define account credentials from txt file(email and password for multiple accounts)
+
+; Path to the credentials file
+filePath := "credentials.txt"
+
+; Arrays to hold emails and passwords
+Emails := []
+Passwords := []
+
+; Read the credentials file
+FileRead, fileContent, %filePath%
+
+; Parse the file content
+Loop, Parse, fileContent, `n, `r ; Split by lines
+{
+    ; Skip empty lines
+    if (A_LoopField = "")
+        continue
+    
+    ; Split each line into email and password
+    StringSplit, emailPassword, A_LoopField, `,
+    
+    ; Add email and password to respective arrays
+    Emails.Push(emailPassword1)
+    Passwords.Push(emailPassword2)
+}
+
+; Check if arrays are populated
+if (Emails.Length() = 0 || Passwords.Length() = 0) {
+    MsgBox, Error: No valid credentials found in the file.
+    ExitApp
+}
+
+
+
+
 
 ; Define the coordinates for clicking
 ClickCoords := [1000, 20, 1000, 150, 1000, 100]
