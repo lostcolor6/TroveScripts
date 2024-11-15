@@ -8,6 +8,7 @@ This AutoHotkey script automates the login process for multiple accounts in the 
 - Automated Login: Logs into multiple Glyph accounts using predefined email and password lists.
 - Window Management: Rearranges the Trove game windows in a grid layout for easy access.
 - User Interface: Provides a simple GUI to start and stop the script, as well as rearrange windows.
+- Auto Jump (holding "Space" Key)
 
 ### Requirements
 
