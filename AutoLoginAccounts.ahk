@@ -1,6 +1,6 @@
 ; Define the window titles
 ClientWindowTitle := "Glyph"
-LoginWindowTitle := "Glyph Anmeldung" ; This is the German translation of "Glyph Login"
+LoginWindowTitles := ["Glyph Login", "Glyph Anmeldung", "Connexion à Glyph", "Вход в систему Glyph", "Inicio de sesión de Glyph", "Login da Glyph", "Glyph 로그인", "登录 Glyph"]
 TargetWindowTitle := "Trove"
 
 ; Define account credentials from txt file(email and password for multiple accounts)
@@ -118,6 +118,26 @@ StartScript:
             Sleep, WaitTime
         }
 
+
+        ;This might slow down the script since it runs and checks in each iteration of the loop
+        ; Wait for the login window to appear
+        loginWindowFound := false
+        Loop, % LoginWindowTitles.MaxIndex()
+        {
+            LoginWindowTitle := LoginWindowTitles[A_Index]
+            WinWait, %LoginWindowTitle%,, 10 ; Wait up to 10 seconds for the window to appear
+            if WinExist(LoginWindowTitle)
+            {
+                loginWindowFound := true
+                break
+            }
+        }
+
+        if (!loginWindowFound)
+        {
+            MsgBox, Login window not found for account %A_Index%! Exiting script.
+            ExitApp
+        }
         ; Wait for the login window to appear
         WinWait, %LoginWindowTitle%,, 10 ; Wait up to 10 seconds for the window to appear
         if !WinExist()
@@ -125,6 +145,9 @@ StartScript:
             MsgBox, Login window not found for account %A_Index%! Exiting script.
             ExitApp
         }
+
+
+
 
         ; Activate the login window
         WinActivate
