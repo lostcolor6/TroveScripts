@@ -9,6 +9,7 @@ This AutoHotkey script automates the login process for multiple accounts in the 
 - Window Management: Rearranges the Trove game windows in a grid layout for easy access.
 - User Interface: Provides a simple GUI to start and stop the script, as well as rearrange windows.
 - Auto Jump (holding "Space" Key)
+- Anti AFK (presses "E" every 10s)
 
 ### Requirements
 
@@ -21,7 +22,7 @@ The Glyph client installed at the specified path in the script.
 - Glyph Client: specify the path in the script
 
 
-# Other
+# Other single Scripts
 
 ### AntiAFK
 
