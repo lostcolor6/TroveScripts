@@ -14,7 +14,11 @@ This AutoHotkey script automates the login process for multiple accounts in the 
 ### Requirements
 
 - AutoHotkey installed on your system.
-The Glyph client installed at the specified path in the script.
+The Glyph client installed at the specified path in the script:
+
+
+On Line `94` of `AutoLoginAccounts.ahk` change this
+`"C:\Program Files (x86)\Glyph\GlyphClient.exe" ; Replace with the actual path to your client executable`
 
 ### Configuration
 - Account Credentials: Update the Emails and Passwords arrays in the script with your Glyph account details.
