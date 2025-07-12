@@ -60,9 +60,12 @@ Gui, Add, Text, x20 y100 w200 h20, - Sending 'E' Key to %TargetWindowTitle% ever
 Gui, Add, Button, gStartAntiAFK x20 y120 w100 h30, Start Anti-AFK
 Gui, Add, Button, gStopAntiAFK x120 y120 w100 h30, Stop Anti-AFK
 
+Gui, Add, Button, gStartAutoJump x20 y160 w100 h30, Start AutoJump
+Gui, Add, Button, gStopAutoJump x120 y160 w100 h30, Stop AutoJump
+
 Gui, Add, Button, gRearrangeWindows x40 y200 w150 h30, Rearrange Trove Windows
 
-Gui, Add, Text, x20 y260 w200 h20, - Hold space for autojump
+; Gui, Add, Text, x20 y260 w200 h20, - Hold space for autojump
 Gui, Add, Text, x20 y280 w280 h20, - Ctrl +  Q to force Exit
 
 Gui, Show, w420 h320, AutoHotkey Script Running
@@ -72,8 +75,9 @@ ScriptRunning := true
 
 ;AntiAFK settings
 AntiAFKRunning := false
-Interval := 10000 ; 10000 milliseconds = 10 seconds
+Interval := 200000 ; 200000 milliseconds = 200 seconds
 
+AutoJump := false
 
 ; Function to start the script
 StartScript:
@@ -206,12 +210,12 @@ RearrangeWindows:
         this_id := id%A_Index%
         RowNum := Mod(A_Index - 1, 2) ; 2 rows
         ColNum := Floor((A_Index - 1) / 2) ; 3 columns
-        X := ColNum * 800 ; window width: 800
-        Y := RowNum * 500 ; window height: 500
+        X := ColNum * 900 ; window width: 900
+        Y := RowNum * 650 ; window height: 650
 
         ; Move the window to the calculated position and resize it
         WinActivate, ahk_id %this_id%
-        WinMove, ahk_id %this_id%, , X, Y, 800, 500
+        WinMove, ahk_id %this_id%, , X, Y, 900, 650
     }
 return
 
@@ -256,12 +260,43 @@ return
 
 
 
+
+
+; Function to start the AutoJump script
+StartAutoJump:
+    if (AutoJump) {
+        MsgBox, Autojump is already running!
+        return
+    }
+    
+    AutoJump := true
+    
+    GuiControl,, StatusText, Status: AutoJump running
+return
+
+; Function to stop the AutoJump
+StopAutoJump:
+    AutoJump := false
+    
+    GuiControl,, StatusText, Status: AutoJump stopped
+return
+
+
 $Space::
-    while GetKeyState("Space", "P")  ; Checks if the space key is pressed
+; AutoJump function
+    if (AutoJump) {
+        while GetKeyState("Space", "P")  ; Checks if the space key is pressed
     {
         Send {Space}  ; Sends the space key
         Sleep 115  ; Adjust the delay between presses (50ms is a reasonable value, tweak as needed)
     }
+    }
+    else {
+        if(GetKeyState("Space", "P")) {
+            Send {Space}  ; If AutoJump is not running, just send the space key
+        }
+    }
+    
 return
 
 ; Hotkey to force quit (Ctrl + Q)
