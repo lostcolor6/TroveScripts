@@ -44,7 +44,7 @@ if (Emails.Length() = 0 || Passwords.Length() = 0) {
 ClickCoords := [1000, 20, 1000, 150, 1000, 100]
 
 ; Define the wait times (in milliseconds)
-WaitTime := 500
+WaitTime := 1000
 LongWaitTime := 2000
 
 ; Create a simple GUI window
