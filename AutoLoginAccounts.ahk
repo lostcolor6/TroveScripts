@@ -8,9 +8,11 @@ TargetWindowTitle := "Trove"
 ; Path to the credentials file
 filePath := "credentials.txt"
 
-; Arrays to hold emails and passwords
+; Arrays to hold account data
+AccountNumbers := []
 Emails := []
 Passwords := []
+WindowStates := [] ; Track window states: "logged_in", "crashed", "logging_in", "offline"
 
 ; Read the credentials file
 FileRead, fileContent, %filePath%
@@ -22,12 +24,14 @@ Loop, Parse, fileContent, `n, `r ; Split by lines
     if (A_LoopField = "")
         continue
     
-    ; Split each line into email and password
-    StringSplit, emailPassword, A_LoopField, `,
+    ; Split each line into account number, email and password
+    StringSplit, accountData, A_LoopField, `,
     
-    ; Add email and password to respective arrays
-    Emails.Push(emailPassword1)
-    Passwords.Push(emailPassword2)
+    ; Add account data to respective arrays
+    AccountNumbers.Push(accountData1)
+    Emails.Push(accountData2)
+    Passwords.Push(accountData3)
+    WindowStates.Push("offline")
 }
 
 ; Check if arrays are populated
@@ -64,11 +68,16 @@ Gui, Add, Button, gStartAutoJump x20 y160 w100 h30, Start AutoJump
 Gui, Add, Button, gStopAutoJump x120 y160 w100 h30, Stop AutoJump
 
 Gui, Add, Button, gRearrangeWindows x40 y200 w150 h30, Rearrange Trove Windows
+Gui, Add, Button, gShowDesktopInfo x220 y200 w120 h30, Desktop Info
 
-; Gui, Add, Text, x20 y260 w200 h20, - Hold space for autojump
-Gui, Add, Text, x20 y280 w280 h20, - Ctrl +  Q to force Exit
+Gui, Add, Button, gStartCrashDetection x20 y240 w100 h30, Start Monitor
+Gui, Add, Button, gStopCrashDetection x120 y240 w100 h30, Stop Monitor
+Gui, Add, Button, gShowWindowStatus x220 y240 w120 h30, Window Status
 
-Gui, Show, w420 h320, AutoHotkey Script Running
+; Gui, Add, Text, x20 y280 w200 h20, - Hold space for autojump
+Gui, Add, Text, x20 y320 w280 h20, - Ctrl +  Q to force Exit
+
+Gui, Show, w420 h360, AutoHotkey Script Running
 
 ; Variable to control the loop (starts as true initially)
 ScriptRunning := true
@@ -78,6 +87,141 @@ AntiAFKRunning := false
 Interval := 200000 ; 200000 milliseconds = 200 seconds
 
 AutoJump := false
+
+; Crash detection settings
+CrashDetectionRunning := false
+CrashCheckInterval := 30000 ; Check every 30 seconds
+
+; Function to rename a Trove window
+RenameWindow(windowId, accountNumber) {
+    newTitle := "Trove - Account " . accountNumber
+    WinSetTitle, ahk_id %windowId%, , %newTitle%
+    return newTitle
+}
+
+; Function to find window by account number
+FindWindowByAccount(accountNumber) {
+    targetTitle := "Trove - Account " . accountNumber
+    WinGet, windowId, ID, %targetTitle%
+    if (windowId) {
+        return windowId
+    }
+    return 0
+}
+
+; Function to detect crashed windows and re-login
+DetectAndFixCrashes() {
+    Loop, % AccountNumbers.MaxIndex()
+    {
+        accountNum := AccountNumbers[A_Index]
+        currentState := WindowStates[A_Index]
+        
+        ; Only check windows that should be logged in
+        if (currentState = "logged_in") {
+            windowId := FindWindowByAccount(accountNum)
+            
+            if (!windowId) {
+                ; Window crashed or closed
+                WindowStates[A_Index] := "crashed"
+                GuiControl,, StatusText, Status: Account %accountNum% crashed, restarting...
+                
+                ; Start re-login process for this account
+                ReloginAccount(A_Index)
+            }
+        }
+    }
+}
+
+; Function to re-login a specific account
+ReloginAccount(accountIndex) {
+    if (!ScriptRunning) {
+        return
+    }
+    
+    accountNum := AccountNumbers[accountIndex]
+    email := Emails[accountIndex]
+    password := Passwords[accountIndex]
+    
+    WindowStates[accountIndex] := "logging_in"
+    
+    ; Start a new instance of the client
+    Run, "C:\Program Files (x86)\Glyph\GlyphClient.exe"
+    Sleep, LongWaitTime
+    
+    ; Wait for the client window to appear
+    WinWait, %ClientWindowTitle%,, 10
+    if !WinExist() {
+        WindowStates[accountIndex] := "crashed"
+        return
+    }
+    
+    ; Activate the client window
+    WinActivate
+    
+    ; Click on the coordinates (same as original login process)
+    Loop, 3 {
+        MouseMove, ClickCoords[(A_Index*2)-1], ClickCoords[A_Index*2], 0
+        Sleep, WaitTime
+        Click
+        Sleep, WaitTime
+    }
+    
+    ; Wait for login window
+    loginWindowFound := false
+    Loop, % LoginWindowTitles.MaxIndex() {
+        LoginWindowTitle := LoginWindowTitles[A_Index]
+        WinWait, %LoginWindowTitle%,, 10
+        if WinExist(LoginWindowTitle) {
+            loginWindowFound := true
+            break
+        }
+    }
+    
+    if (!loginWindowFound) {
+        WindowStates[accountIndex] := "crashed"
+        return
+    }
+    
+    ; Activate the login window
+    WinActivate
+    
+    ; Input credentials
+    SetKeyDelay, 10, 10
+    ; Escape the @ symbol in email
+    emailEscaped := StrReplace(email, "@", "{@}")
+    ControlSend,, %emailEscaped%, %LoginWindowTitle%
+    Sleep, WaitTime
+    ControlSend,, {Tab}, %LoginWindowTitle%
+    Sleep, WaitTime
+    
+    SetKeyDelay, 20, 10
+    ControlSend,, % StrReplace(password, "#", "{#}"), %LoginWindowTitle%
+    Sleep, WaitTime
+    ControlSend,, {Enter}, %LoginWindowTitle%
+    Sleep, LongWaitTime
+    
+    ; Wait for login to complete
+    WinWaitNotActive, %LoginWindowTitle%,, 30
+    
+    ; Activate Glyph client and start game
+    WinActivate, %ClientWindowTitle%
+    MouseMove, ClickCoords[5], ClickCoords[6], 0
+    Sleep, WaitTime
+    Click
+    Sleep, WaitTime
+    
+    ; Wait a bit for Trove to start, then rename the window
+    Sleep, 5000
+    WinWait, %TargetWindowTitle%,, 30
+    if WinExist() {
+        WinGet, newWindowId, ID, %TargetWindowTitle%
+        RenameWindow(newWindowId, accountNum)
+        WindowStates[accountIndex] := "logged_in"
+        GuiControl,, StatusText, Status: Account %accountNum% successfully restarted
+    } else {
+        WindowStates[accountIndex] := "crashed"
+    }
+}
 
 
 ;AUTO-OPEN
@@ -162,7 +306,9 @@ StartScript:
         ; Input the email
         email := Emails[A_Index]
         SetKeyDelay, 10, 10 ; Set a delay of 10ms between key presses
-        ControlSend,, %email%, %LoginWindowTitle% ; Send email to the email field
+        ; Escape the @ symbol in email
+        emailEscaped := StrReplace(email, "@", "{@}")
+        ControlSend,, %emailEscaped%, %LoginWindowTitle% ; Send email to the email field
         Sleep, WaitTime
 
         ; Move focus to password field
@@ -195,7 +341,31 @@ StartScript:
         Sleep, WaitTime
         Click
         Sleep, WaitTime
+        
+        ; Wait for Trove to launch and rename the window
+        accountNum := AccountNumbers[A_Index]
+        WindowStates[A_Index] := "logging_in"
+        
+        ; Wait a bit longer for Trove to fully load
+        Sleep, 8000
+        
+        ; Find and rename the newest Trove window
+        WinWait, %TargetWindowTitle%,, 30
+        if WinExist() {
+            WinGet, windowId, ID, %TargetWindowTitle%
+            RenameWindow(windowId, accountNum)
+            WindowStates[A_Index] := "logged_in"
+            GuiControl,, StatusText, Status: Account %accountNum% logged in successfully
+        } else {
+            WindowStates[A_Index] := "crashed"
+            GuiControl,, StatusText, Status: Account %accountNum% failed to start
+        }
     }
+    
+    ; Start crash detection after all accounts are logged in
+    SetTimer, CrashDetectionTimer, %CrashCheckInterval%
+    CrashDetectionRunning := true
+    GuiControl,, StatusText, Status: All accounts logged in, monitoring for crashes
 return
 
 ; Function to handle stopping the script
@@ -204,22 +374,126 @@ StopScript:
     GuiControl,, StatusText, Status: Not Running
 return
 
-; Function to rearrange the Trove windows
+; Function to rearrange the Trove windows dynamically
 RearrangeWindows:
-    WinGet, id, list, %TargetWindowTitle%
-    Loop, %id%
-    {
-        ; Calculate the position for each window
-        this_id := id%A_Index%
-        RowNum := Mod(A_Index - 1, 2) ; 2 rows
-        ColNum := Floor((A_Index - 1) / 2) ; 3 columns
-        X := ColNum * 900 ; window width: 900
-        Y := RowNum * 650 ; window height: 650
-
-        ; Move the window to the calculated position and resize it
-        WinActivate, ahk_id %this_id%
-        WinMove, ahk_id %this_id%, , X, Y, 900, 650
+    ; Get primary monitor resolution
+    SysGet, PrimaryMonitor, MonitorPrimary
+    SysGet, MonitorWorkArea, MonitorWorkArea, %PrimaryMonitor%
+    
+    ; Calculate usable desktop area (excluding taskbar)
+    DesktopWidth := MonitorWorkAreaRight - MonitorWorkAreaLeft
+    DesktopHeight := MonitorWorkAreaBottom - MonitorWorkAreaTop
+    
+    ; Get list of all Trove windows (both original and renamed)
+    WinGet, id, list, Trove
+    WindowCount := id
+    
+    if (WindowCount = 0) {
+        MsgBox, No Trove windows found!
+        return
     }
+    
+    ; Calculate optimal grid layout
+    GridLayout := CalculateOptimalGrid(WindowCount)
+    Columns := GridLayout.Columns
+    Rows := GridLayout.Rows
+    
+    ; Calculate window dimensions with small padding
+    Padding := 5
+    WindowWidth := Floor((DesktopWidth - (Padding * (Columns + 1))) / Columns)
+    WindowHeight := Floor((DesktopHeight - (Padding * (Rows + 1))) / Rows)
+    
+    ; Arrange windows in grid
+    Loop, %WindowCount%
+    {
+        this_id := id%A_Index%
+        
+        ; Calculate grid position (cycles through grid for >6 windows)
+        GridIndex := Mod(A_Index - 1, 6)  ; Reset every 6 windows for overlay
+        RowNum := Floor(GridIndex / 3)     ; 0 or 1 for 3x2 grid
+        ColNum := Mod(GridIndex, 3)        ; 0, 1, or 2
+        
+        ; Calculate actual screen coordinates
+        X := MonitorWorkAreaLeft + Padding + (ColNum * (WindowWidth + Padding))
+        Y := MonitorWorkAreaTop + Padding + (RowNum * (WindowHeight + Padding))
+        
+        ; For overlapping windows (>6), add slight offset
+        if (A_Index > 6) {
+            OverlayOffset := ((A_Index - 1) / 6) * 20
+            X += OverlayOffset
+            Y += OverlayOffset
+        }
+        
+        ; Move and resize the window
+        WinActivate, ahk_id %this_id%
+        WinMove, ahk_id %this_id%, , X, Y, WindowWidth, WindowHeight
+        
+        ; Brief pause to ensure window operations complete
+        Sleep, 50
+    }
+    
+    GuiControl,, StatusText, Status: Arranged %WindowCount% windows in %Columns%x%Rows% grid
+return
+
+; Function to calculate optimal grid layout based on window count
+CalculateOptimalGrid(windowCount)
+{
+    ; Default to 3x2 grid for up to 6 windows
+    if (windowCount <= 6) {
+        if (windowCount <= 3) {
+            return {Columns: windowCount, Rows: 1}
+        } else {
+            return {Columns: 3, Rows: 2}
+        }
+    }
+    
+    ; For more than 6 windows, still use 3x2 base grid (windows will overlay)
+    ; This maintains the preferred 3x2 layout as requested
+    return {Columns: 3, Rows: 2}
+}
+
+; Function to show desktop information
+ShowDesktopInfo:
+    ; Get primary monitor information
+    SysGet, PrimaryMonitor, MonitorPrimary
+    SysGet, MonitorWorkArea, MonitorWorkArea, %PrimaryMonitor%
+    SysGet, Monitor, Monitor, %PrimaryMonitor%
+    
+    ; Calculate dimensions
+    FullWidth := MonitorRight - MonitorLeft
+    FullHeight := MonitorBottom - MonitorTop
+    WorkWidth := MonitorWorkAreaRight - MonitorWorkAreaLeft
+    WorkHeight := MonitorWorkAreaBottom - MonitorWorkAreaTop
+    TaskbarHeight := FullHeight - WorkHeight
+    
+    ; Get current Trove window count
+    WinGet, id, list, %TargetWindowTitle%
+    WindowCount := id
+    
+    ; Show information dialog
+    InfoText := "Desktop Information:`n`n"
+    InfoText .= "Full Resolution: " . FullWidth . " x " . FullHeight . "`n"
+    InfoText .= "Work Area: " . WorkWidth . " x " . WorkHeight . "`n"
+    InfoText .= "Taskbar Height: " . TaskbarHeight . "px`n`n"
+    InfoText .= "Current Trove Windows: " . WindowCount . "`n"
+    
+    if (WindowCount > 0) {
+        GridLayout := CalculateOptimalGrid(WindowCount)
+        Columns := GridLayout.Columns
+        Rows := GridLayout.Rows
+        
+        WindowWidth := Floor((WorkWidth - (5 * (Columns + 1))) / Columns)
+        WindowHeight := Floor((WorkHeight - (5 * (Rows + 1))) / Rows)
+        
+        InfoText .= "Grid Layout: " . Columns . " x " . Rows . "`n"
+        InfoText .= "Window Size: " . WindowWidth . " x " . WindowHeight . "`n"
+        
+        if (WindowCount > 6) {
+            InfoText .= "`nNote: " . (WindowCount - 6) . " windows will overlay"
+        }
+    }
+    
+    MsgBox, 0, Desktop Information, %InfoText%
 return
 
 
@@ -379,7 +653,62 @@ StopBroadcast(key)
 
 */
 
+; Crash Detection Controls
+StartCrashDetection:
+    if (CrashDetectionRunning) {
+        MsgBox, Crash detection is already running!
+        return
+    }
+    
+    CrashDetectionRunning := true
+    SetTimer, CrashDetectionTimer, %CrashCheckInterval%
+    GuiControl,, StatusText, Status: Crash detection started
+return
 
+StopCrashDetection:
+    CrashDetectionRunning := false
+    SetTimer, CrashDetectionTimer, Off
+    GuiControl,, StatusText, Status: Crash detection stopped
+return
+
+; Timer function for crash detection
+CrashDetectionTimer:
+    if (CrashDetectionRunning) {
+        DetectAndFixCrashes()
+    }
+return
+
+; Function to show current window status
+ShowWindowStatus:
+    StatusText := "Window Status Report:`n`n"
+    
+    Loop, % AccountNumbers.MaxIndex() {
+        accountNum := AccountNumbers[A_Index]
+        email := Emails[A_Index]
+        state := WindowStates[A_Index]
+        windowId := FindWindowByAccount(accountNum)
+        
+        StatusText .= "Account " . accountNum . " (" . email . "):`n"
+        StatusText .= "  State: " . state . "`n"
+        
+        if (windowId) {
+            StatusText .= "  Window: Found (ID: " . windowId . ")`n"
+        } else {
+            StatusText .= "  Window: Not found`n"
+        }
+        StatusText .= "`n"
+    }
+    
+    ; Add crash detection status
+    StatusText .= "Crash Detection: " 
+    if (CrashDetectionRunning) {
+        StatusText .= "Running (checks every " . (CrashCheckInterval/1000) . "s)"
+    } else {
+        StatusText .= "Stopped"
+    }
+    
+    MsgBox, 0, Window Status, %StatusText%
+return
 
 ; Hotkey to force quit (Ctrl + Q)
 ^q::ExitApp
