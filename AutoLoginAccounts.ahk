@@ -35,7 +35,9 @@ Loop, Parse, fileContent, `n, `r ; Split by lines
 }
 
 ; Check if arrays are populated
-if (Emails.Length() = 0 || Passwords.Length() = 0) {
+emailCount := Emails.MaxIndex()
+passwordCount := Passwords.MaxIndex()
+if (emailCount = "" || passwordCount = "" || emailCount = 0 || passwordCount = 0) {
     MsgBox, Error: No valid credentials found in the file.
     ExitApp
 }
@@ -51,36 +53,72 @@ ClickCoords := [1000, 20, 1000, 150, 1000, 100]
 WaitTime := 1000
 LongWaitTime := 2000
 
-; Create a simple GUI window
+; Create a modern GUI window with tabs
+Gui, Add, Tab3, x10 y10 w780 h500 vMainTabs, Accounts|Settings|Tools
 
+; === ACCOUNTS TAB ===
+Gui, Tab, Accounts
 
-Gui, Add, Text, x20 y20 w300 h20 vStatusText, Status: Not Running
+; Status and main controls
+Gui, Add, Text, x20 y50 w300 h20 vStatusText, Status: Not Running
+Gui, Add, Button, gStartScript x20 y75 w100 h30, Start All
+Gui, Add, Button, gStopScript x130 y75 w100 h30, Stop All
 
-Gui, Add, Button, gStartScript x20 y40 w100 h30, Start Script
-Gui, Add, Button, gStopScript x120 y40 w100 h30, Stop Script
+; Account table header
+Gui, Add, Text, x20 y120 w40 h20 +Center +Border, #
+Gui, Add, Text, x60 y120 w200 h20 +Center +Border, Email
+Gui, Add, Text, x260 y120 w80 h20 +Center +Border, Status
+Gui, Add, Text, x340 y120 w80 h20 +Center +Border, Action
 
+; Create account rows dynamically
+AccountRowY := 140
+Loop, % Emails.MaxIndex() {
+    accountNum := AccountNumbers[A_Index]
+    email := Emails[A_Index]
+    
+    ; Account number
+    Gui, Add, Text, x20 y%AccountRowY% w40 h25 +Center +Border vAccNum%A_Index%, %accountNum%
+    
+    ; Email
+    Gui, Add, Text, x60 y%AccountRowY% w200 h25 +Center +Border vAccEmail%A_Index%, %email%
+    
+    ; Status
+    Gui, Add, Text, x260 y%AccountRowY% w80 h25 +Center +Border vAccStatus%A_Index%, Offline
+    
+    ; Individual login button
+    Gui, Add, Button, x340 y%AccountRowY% w80 h25 gLoginAccount%A_Index% vLoginBtn%A_Index%, Login
+    
+    AccountRowY += 25
+}
 
-Gui, Add, Text, x20 y100 w200 h20, - Sending 'E' Key to %TargetWindowTitle% every %Interval% ms
-Gui, Add, Button, gStartAntiAFK x20 y120 w100 h30, Start Anti-AFK
-Gui, Add, Button, gStopAntiAFK x120 y120 w100 h30, Stop Anti-AFK
+; === SETTINGS TAB ===
+Gui, Tab, Settings
 
-Gui, Add, Button, gStartAutoJump x20 y160 w100 h30, Start AutoJump
-Gui, Add, Button, gStopAutoJump x120 y160 w100 h30, Stop AutoJump
+; Anti-AFK Settings
+Gui, Add, GroupBox, x20 y50 w350 h80, Anti-AFK Settings
+Gui, Add, Checkbox, x30 y75 w150 h20 vAntiAFKCheck gToggleAntiAFK, Enable Anti-AFK
+Gui, Add, Text, x30 y100 w200 h20, Send 'E' key every %Interval% ms
 
-Gui, Add, Button, gRearrangeWindows x40 y200 w150 h30, Rearrange Trove Windows
-Gui, Add, Button, gShowDesktopInfo x220 y200 w120 h30, Desktop Info
+; AutoJump Settings  
+Gui, Add, GroupBox, x20 y140 w350 h60, AutoJump Settings
+Gui, Add, Checkbox, x30 y165 w150 h20 vAutoJumpCheck gToggleAutoJump, Enable AutoJump
 
-Gui, Add, Button, gStartCrashDetection x20 y240 w100 h30, Start Monitor
-Gui, Add, Button, gStopCrashDetection x120 y240 w100 h30, Stop Monitor
-Gui, Add, Button, gShowWindowStatus x220 y240 w120 h30, Window Status
+; === TOOLS TAB ===
+Gui, Tab, Tools
 
-; Gui, Add, Text, x20 y280 w200 h20, - Hold space for autojump
-Gui, Add, Text, x20 y320 w280 h20, - Ctrl +  Q to force Exit
+Gui, Add, Button, gRearrangeWindows x20 y50 w150 h40, Rearrange Windows
+Gui, Add, Button, gShowDesktopInfo x180 y50 w120 h40, Desktop Info
 
-Gui, Show, w420 h360, AutoHotkey Script Running
+; Instructions
+Gui, Add, Text, x20 y120 w350 h40, Instructions:`n- Use checkboxes in Settings tab to enable/disable features`n- Individual login buttons are available in Accounts tab
+Gui, Add, Text, x20 y180 w280 h20, Press Ctrl + Q to force exit
 
-; Variable to control the loop (starts as true initially)
-ScriptRunning := true
+Gui, Tab ; End tab creation
+
+Gui, Show, w800 h520, Trove Auto Login Manager
+
+; Variable to control the loop (starts as false initially)
+ScriptRunning := false
 
 ;AntiAFK settings
 AntiAFKRunning := false
@@ -88,9 +126,9 @@ Interval := 200000 ; 200000 milliseconds = 200 seconds
 
 AutoJump := false
 
-; Crash detection settings
-CrashDetectionRunning := false
-CrashCheckInterval := 30000 ; Check every 30 seconds
+; GUI checkbox variables (will be set by Gui, Submit, NoHide)
+AntiAFKCheck := false
+AutoJumpCheck := false
 
 ; Function to rename a Trove window
 RenameWindow(windowId, accountNumber) {
@@ -109,99 +147,190 @@ FindWindowByAccount(accountNumber) {
     return 0
 }
 
-; Function to detect crashed windows and re-login
-DetectAndFixCrashes() {
-    Loop, % AccountNumbers.MaxIndex()
-    {
-        accountNum := AccountNumbers[A_Index]
-        currentState := WindowStates[A_Index]
-        
-        ; Only check windows that should be logged in
-        if (currentState = "logged_in") {
-            windowId := FindWindowByAccount(accountNum)
-            
-            if (!windowId) {
-                ; Window crashed or closed
-                WindowStates[A_Index] := "crashed"
-                GuiControl,, StatusText, Status: Account %accountNum% crashed, restarting...
-                
-                ; Start re-login process for this account
-                ReloginAccount(A_Index)
-            }
-        }
-    }
-}
+; Removed crash detection and auto re-login functions as requested
 
-; Function to re-login a specific account
-ReloginAccount(accountIndex) {
-    if (!ScriptRunning) {
+
+;AUTO-OPEN
+
+; Individual account login functions (dynamically handle up to 10 accounts)
+LoginAccount1:
+    GuiControl,, StatusText, DEBUG: LoginAccount1 button clicked!
+    LoginSingleAccount(1)
+return
+LoginAccount2:
+    GuiControl,, StatusText, DEBUG: LoginAccount2 button clicked!
+    LoginSingleAccount(2)
+return
+LoginAccount3:
+    GuiControl,, StatusText, DEBUG: LoginAccount3 button clicked!
+    LoginSingleAccount(3)
+return
+LoginAccount4:
+    GuiControl,, StatusText, DEBUG: LoginAccount4 button clicked!
+    LoginSingleAccount(4)
+return
+LoginAccount5:
+    GuiControl,, StatusText, DEBUG: LoginAccount5 button clicked!
+    LoginSingleAccount(5)
+return
+LoginAccount6:
+    GuiControl,, StatusText, DEBUG: LoginAccount6 button clicked!
+    LoginSingleAccount(6)
+return
+LoginAccount7:
+    GuiControl,, StatusText, DEBUG: LoginAccount7 button clicked!
+    LoginSingleAccount(7)
+return
+LoginAccount8:
+    GuiControl,, StatusText, DEBUG: LoginAccount8 button clicked!
+    LoginSingleAccount(8)
+return
+LoginAccount9:
+    GuiControl,, StatusText, DEBUG: LoginAccount9 button clicked!
+    LoginSingleAccount(9)
+return
+LoginAccount10:
+    GuiControl,, StatusText, DEBUG: LoginAccount10 button clicked!
+    LoginSingleAccount(10)
+return
+
+; Function to login a single account
+LoginSingleAccount(accountIndex) {
+    global AccountNumbers, Emails, Passwords, WindowStates
+    global ClientWindowTitle, LoginWindowTitles, TargetWindowTitle
+    global ClickCoords, WaitTime, LongWaitTime
+    
+    ; Debug: Function called
+    GuiControl,, StatusText, DEBUG: LoginSingleAccount called for index %accountIndex%
+    Sleep, 1000  ; Give time to see the message
+    
+    maxAccounts := Emails.MaxIndex()
+    GuiControl,, StatusText, DEBUG: Checking arrays - maxAccounts: %maxAccounts%
+    Sleep, 1000
+    
+    if (maxAccounts = "" || accountIndex > maxAccounts) {
+        GuiControl,, StatusText, DEBUG: Invalid account index %accountIndex% (max: %maxAccounts%)
         return
     }
     
     accountNum := AccountNumbers[accountIndex]
-    email := Emails[accountIndex]
+    email := Emails[accountIndex] 
     password := Passwords[accountIndex]
     
-    WindowStates[accountIndex] := "logging_in"
+    ; Debug: Account info
+    GuiControl,, StatusText, DEBUG: Account %accountNum% - %email%
+    Sleep, 1000
+    
+    GuiControl,, AccStatus%accountIndex%, Logging in...
+    GuiControl,, StatusText, DEBUG: Starting Glyph client for Account %accountNum%
+    Sleep, 1000
     
     ; Start a new instance of the client
     Run, "C:\Program Files (x86)\Glyph\GlyphClient.exe"
     Sleep, LongWaitTime
     
+    ; Debug: Waiting for client window
+    GuiControl,, StatusText, DEBUG: Waiting for Glyph client window...
+    Sleep, 1000
+    
     ; Wait for the client window to appear
     WinWait, %ClientWindowTitle%,, 10
     if !WinExist() {
-        WindowStates[accountIndex] := "crashed"
+        GuiControl,, AccStatus%accountIndex%, Failed
+        GuiControl,, StatusText, DEBUG: ERROR - Glyph client window not found for Account %accountNum%
         return
     }
+    
+    ; Debug: Client window found
+    GuiControl,, StatusText, DEBUG: Glyph client found, activating...
+    Sleep, 1000
     
     ; Activate the client window
     WinActivate
     
-    ; Click on the coordinates (same as original login process)
+    ; Debug: Clicking coordinates
+    GuiControl,, StatusText, DEBUG: Clicking coordinates in Glyph client...
+    Sleep, 1000
+    
+    ; Click on the coordinates
     Loop, 3 {
-        MouseMove, ClickCoords[(A_Index*2)-1], ClickCoords[A_Index*2], 0
+        coordX := ClickCoords[(A_Index*2)-1]
+        coordY := ClickCoords[A_Index*2]
+        GuiControl,, StatusText, DEBUG: Clicking %coordX%,%coordY% (click %A_Index%/3)
+        MouseMove, coordX, coordY, 0
         Sleep, WaitTime
         Click
         Sleep, WaitTime
     }
     
-    ; Wait for login window
+    ; Debug: Waiting for login window
+    GuiControl,, StatusText, DEBUG: Searching for login window...
+    
+    ; Wait for login window with reduced timeout (20 seconds max)
     loginWindowFound := false
     Loop, % LoginWindowTitles.MaxIndex() {
         LoginWindowTitle := LoginWindowTitles[A_Index]
-        WinWait, %LoginWindowTitle%,, 10
+        GuiControl,, StatusText, DEBUG: Looking for window: %LoginWindowTitle%
+        WinWait, %LoginWindowTitle%,, 2 ; Reduced wait time to 2 seconds per attempt
         if WinExist(LoginWindowTitle) {
             loginWindowFound := true
+            GuiControl,, StatusText, DEBUG: Found login window: %LoginWindowTitle%
             break
         }
     }
     
     if (!loginWindowFound) {
-        WindowStates[accountIndex] := "crashed"
+        GuiControl,, AccStatus%accountIndex%, Failed
+        GuiControl,, StatusText, DEBUG: ERROR - No login window found for Account %accountNum%
         return
     }
     
-    ; Activate the login window
-    WinActivate
+    ; Debug: Activating login window
+    GuiControl,, StatusText, DEBUG: Activating login window and entering credentials...
     
-    ; Input credentials
+    ; Activate the login window and input credentials quickly
+    WinActivate
+    Sleep, 500 ; Reduced wait time
+    
+    ; Debug: Sending email
+    GuiControl,, StatusText, DEBUG: Sending email: %email%
+    
+    ; Input email
     SetKeyDelay, 10, 10
-    ; Escape the @ symbol in email
     emailEscaped := StrReplace(email, "@", "{@}")
     ControlSend,, %emailEscaped%, %LoginWindowTitle%
-    Sleep, WaitTime
-    ControlSend,, {Tab}, %LoginWindowTitle%
-    Sleep, WaitTime
+    Sleep, 500 ; Reduced wait time
     
+    ; Debug: Moving to password field
+    GuiControl,, StatusText, DEBUG: Moving to password field...
+    
+    ; Move to password field
+    ControlSend,, {Tab}, %LoginWindowTitle%
+    Sleep, 500 ; Reduced wait time
+    
+    ; Debug: Sending password
+    GuiControl,, StatusText, DEBUG: Sending password...
+    
+    ; Input password
     SetKeyDelay, 20, 10
     ControlSend,, % StrReplace(password, "#", "{#}"), %LoginWindowTitle%
-    Sleep, WaitTime
-    ControlSend,, {Enter}, %LoginWindowTitle%
-    Sleep, LongWaitTime
+    Sleep, 500 ; Reduced wait time
     
-    ; Wait for login to complete
-    WinWaitNotActive, %LoginWindowTitle%,, 30
+    ; Debug: Pressing Enter
+    GuiControl,, StatusText, DEBUG: Pressing Enter to login...
+    
+    ; Press Enter to log in
+    ControlSend,, {Enter}, %LoginWindowTitle%
+    Sleep, 1000 ; Reduced wait time
+    
+    ; Debug: Waiting for login completion
+    GuiControl,, StatusText, DEBUG: Waiting for login window to close...
+    
+    ; Wait for login to complete (max 20 seconds)
+    WinWaitNotActive, %LoginWindowTitle%,, 20
+    
+    ; Debug: Starting game
+    GuiControl,, StatusText, DEBUG: Login window closed, starting game...
     
     ; Activate Glyph client and start game
     WinActivate, %ClientWindowTitle%
@@ -210,51 +339,57 @@ ReloginAccount(accountIndex) {
     Click
     Sleep, WaitTime
     
-    ; Wait a bit for Trove to start, then rename the window
+    ; Debug: Waiting for Trove
+    GuiControl,, StatusText, DEBUG: Waiting for Trove to launch...
+    
+    ; Wait for Trove to launch
     Sleep, 5000
-    WinWait, %TargetWindowTitle%,, 30
+    WinWait, %TargetWindowTitle%,, 20 ; Reduced to 20 seconds max
     if WinExist() {
-        WinGet, newWindowId, ID, %TargetWindowTitle%
-        RenameWindow(newWindowId, accountNum)
+        WinGet, windowId, ID, %TargetWindowTitle%
+        RenameWindow(windowId, accountNum)
         WindowStates[accountIndex] := "logged_in"
-        GuiControl,, StatusText, Status: Account %accountNum% successfully restarted
+        GuiControl,, AccStatus%accountIndex%, Online
+        GuiControl,, StatusText, DEBUG: SUCCESS - Account %accountNum% logged in and Trove started
     } else {
         WindowStates[accountIndex] := "crashed"
+        GuiControl,, AccStatus%accountIndex%, Failed
+        GuiControl,, StatusText, DEBUG: ERROR - Trove failed to start for Account %accountNum%
     }
 }
-
-
-;AUTO-OPEN
 
 ; Function to start the script
 StartScript:
     if (ScriptRunning)
     {
-        MsgBox, press Start Script to run!
-        ScriptRunning := false 
+        MsgBox, All accounts login already in progress!
         return
     }
     
     ScriptRunning := true
-    GuiControl,, StatusText, Status: Logging in to each instance
+    GuiControl,, StatusText, Status: Logging in to all accounts
 
     ; Start the login process when "Start Script" is clicked
     Loop, % Emails.MaxIndex()  ; Loop through all accounts
     {
+        ; Update GUI status
+        GuiControl,, AccStatus%A_Index%, Logging in...
+        
         ; Start a new instance of the client
-        Run, "C:\Program Files (x86)\Glyph\GlyphClient.exe" ; Replace with the actual path to your client executable
-        Sleep, LongWaitTime ; Wait for the client to load
+        Run, "C:\Program Files (x86)\Glyph\GlyphClient.exe"
+        Sleep, LongWaitTime
 
         ; Exit the loop if the script is stopped
         if (!ScriptRunning)
             Break
 
-        ; Wait for the client window to appear
-        WinWait, %ClientWindowTitle%,, 10 ; Wait up to 10 seconds for the window to appear
+        ; Wait for the client window to appear (reduced timeout)
+        WinWait, %ClientWindowTitle%,, 10
         if !WinExist()
         {
-            MsgBox, Client window not found for account %A_Index%! Exiting script.
-            ExitApp
+            GuiControl,, AccStatus%A_Index%, Failed
+            GuiControl,, StatusText, Status: Client failed for Account %A_Index%
+            continue
         }
 
         ; Activate the client window
@@ -269,14 +404,12 @@ StartScript:
             Sleep, WaitTime
         }
 
-
-        ;This might slow down the script since it runs and checks in each iteration of the loop
-        ; Wait for the login window to appear
+        ; Wait for the login window to appear (reduced total wait time to max 20 seconds)
         loginWindowFound := false
         Loop, % LoginWindowTitles.MaxIndex()
         {
             LoginWindowTitle := LoginWindowTitles[A_Index]
-            WinWait, %LoginWindowTitle%,, 10 ; Wait up to 10 seconds for the window to appear
+            WinWait, %LoginWindowTitle%,, 3 ; 3 seconds per window title
             if WinExist(LoginWindowTitle)
             {
                 loginWindowFound := true
@@ -286,53 +419,39 @@ StartScript:
 
         if (!loginWindowFound)
         {
-            MsgBox, Login window not found for account %A_Index%! Exiting script.
-            ExitApp
-        }
-        ; Wait for the login window to appear
-        WinWait, %LoginWindowTitle%,, 10 ; Wait up to 10 seconds for the window to appear
-        if !WinExist()
-        {
-            MsgBox, Login window not found for account %A_Index%! Exiting script.
-            ExitApp
+            GuiControl,, AccStatus%A_Index%, Failed
+            GuiControl,, StatusText, Status: Login window not found for Account %A_Index%
+            continue
         }
 
-
-
-
-        ; Activate the login window
+        ; Activate the login window and input credentials quickly
         WinActivate
+        Sleep, 500 ; Reduced delay
 
         ; Input the email
         email := Emails[A_Index]
-        SetKeyDelay, 10, 10 ; Set a delay of 10ms between key presses
-        ; Escape the @ symbol in email
+        SetKeyDelay, 10, 10
         emailEscaped := StrReplace(email, "@", "{@}")
-        ControlSend,, %emailEscaped%, %LoginWindowTitle% ; Send email to the email field
-        Sleep, WaitTime
+        ControlSend,, %emailEscaped%, %LoginWindowTitle%
+        Sleep, 500 ; Reduced delay
 
         ; Move focus to password field
         ControlSend,, {Tab}, %LoginWindowTitle%
-        Sleep, WaitTime
+        Sleep, 500 ; Reduced delay
 
         ; Input the password
         password := Passwords[A_Index]
-        SetKeyDelay, 20, 10 ; Set a delay of 10ms between key presses
+        SetKeyDelay, 20, 10
         ControlSend,, % StrReplace(password, "#", "{#}"), %LoginWindowTitle%
-        Sleep, WaitTime
+        Sleep, 500 ; Reduced delay
 
         ; Press Enter to log in
         ControlSend,, {Enter}, %LoginWindowTitle%
-        Sleep, LongWaitTime ; Wait for login to process
+        Sleep, 1000 ; Reduced delay
 
-        ; Wait for the login window to close
-        WinWaitNotActive, %LoginWindowTitle%,, 30 ; Wait up to 30 seconds for the window to close
-        if WinExist()
-        {
-            MsgBox, Login window did not close for account %A_Index%! Exiting script.
-            ExitApp
-        }
-
+        ; Wait for the login window to close (max 20 seconds)
+        WinWaitNotActive, %LoginWindowTitle%,, 20
+        
         ; Activate the Glyph client window
         WinActivate, %ClientWindowTitle%
 
@@ -346,32 +465,37 @@ StartScript:
         accountNum := AccountNumbers[A_Index]
         WindowStates[A_Index] := "logging_in"
         
-        ; Wait a bit longer for Trove to fully load
-        Sleep, 8000
+        ; Wait for Trove to fully load (reduced time)
+        Sleep, 5000
         
         ; Find and rename the newest Trove window
-        WinWait, %TargetWindowTitle%,, 30
+        WinWait, %TargetWindowTitle%,, 20 ; Reduced to 20 seconds max
         if WinExist() {
             WinGet, windowId, ID, %TargetWindowTitle%
             RenameWindow(windowId, accountNum)
             WindowStates[A_Index] := "logged_in"
+            GuiControl,, AccStatus%A_Index%, Online
             GuiControl,, StatusText, Status: Account %accountNum% logged in successfully
         } else {
             WindowStates[A_Index] := "crashed"
+            GuiControl,, AccStatus%A_Index%, Failed
             GuiControl,, StatusText, Status: Account %accountNum% failed to start
         }
     }
     
-    ; Start crash detection after all accounts are logged in
-    SetTimer, CrashDetectionTimer, %CrashCheckInterval%
-    CrashDetectionRunning := true
-    GuiControl,, StatusText, Status: All accounts logged in, monitoring for crashes
+    GuiControl,, StatusText, Status: All accounts processed
 return
 
 ; Function to handle stopping the script
 StopScript:
     ScriptRunning := false ; Stop the loop
-    GuiControl,, StatusText, Status: Not Running
+    GuiControl,, StatusText, Status: Script stopped
+    
+    ; Reset all account statuses to offline
+    Loop, % Emails.MaxIndex() {
+        GuiControl,, AccStatus%A_Index%, Offline
+        WindowStates[A_Index] := "offline"
+    }
 return
 
 ; Function to rearrange the Trove windows dynamically
@@ -502,23 +626,22 @@ return
 
 ;ANTI-AFK
 
-; Function to start the Anti-AFK script
-StartAntiAFK:
-    if (AntiAFKRunning) {
-        MsgBox, Anti-AFK is already running!
-        return
+; Function to toggle Anti-AFK based on checkbox
+ToggleAntiAFK:
+    Gui, Submit, NoHide
+    if (AntiAFKCheck) {
+        if (!AntiAFKRunning) {
+            AntiAFKRunning := true
+            SetTimer, AntiAFK, %Interval%
+            GuiControl,, StatusText, Status: Anti-AFK Started
+        }
+    } else {
+        if (AntiAFKRunning) {
+            AntiAFKRunning := false
+            SetTimer, AntiAFK, Off
+            GuiControl,, StatusText, Status: Anti-AFK Stopped
+        }
     }
-    
-    AntiAFKRunning := true
-    SetTimer, AntiAFK, %Interval%
-    GuiControl,, StatusText, Status: Anti-AFK Running
-return
-
-; Function to stop the Anti-AFK script
-StopAntiAFK:
-    AntiAFKRunning := false
-    SetTimer, AntiAFK, Off
-    GuiControl,, StatusText, Status: Not Running
 return
 
 ; Anti-AFK function
@@ -543,23 +666,20 @@ return
 
 ;AUTO-JUMP
 
-; Function to start the AutoJump script
-StartAutoJump:
-    if (AutoJump) {
-        MsgBox, Autojump is already running!
-        return
+; Function to toggle AutoJump based on checkbox
+ToggleAutoJump:
+    Gui, Submit, NoHide
+    if (AutoJumpCheck) {
+        if (!AutoJump) {
+            AutoJump := true
+            GuiControl,, StatusText, Status: AutoJump Started
+        }
+    } else {
+        if (AutoJump) {
+            AutoJump := false
+            GuiControl,, StatusText, Status: AutoJump Stopped
+        }
     }
-    
-    AutoJump := true
-    
-    GuiControl,, StatusText, Status: AutoJump running
-return
-
-; Function to stop the AutoJump
-StopAutoJump:
-    AutoJump := false
-    
-    GuiControl,, StatusText, Status: AutoJump stopped
 return
 
 
@@ -584,134 +704,9 @@ return
 
 
 
-
-
-/*
-
-
-
-;MIRROR-WALK
-
-; Set hotkeys for W, A, S, D for both press and release
-~w::StartBroadcast("w")
-~a::StartBroadcast("a")
-~s::StartBroadcast("s")
-~d::StartBroadcast("d")
-
-; Detect when the keys are released
-~w up::StopBroadcast("w")
-~a up::StopBroadcast("a")
-~s up::StopBroadcast("s")
-~d up::StopBroadcast("d")
-
-; Function to start broadcasting key presses to all Trove windows
-StartBroadcast(key)
-{
-    ; Get the list of all open Trove windows
-    WinGet, id, list, %TargetWindowTitle%
-    
-    ; Get the ID of the currently active window (so we don't send keys twice to it)
-    WinGetActiveTitle, activeWindowTitle
-
-    Loop, %id%
-    {
-        this_id := id%A_Index%
-
-        ; Check if the window is the currently active window
-        WinGetTitle, title, ahk_id %this_id%
-        if (title != activeWindowTitle)
-        {
-            ; Send the key down to the window (hold key)
-            ControlSend,, {%key% down}, ahk_id %this_id%
-        }
-    }
-}
-
-; Function to stop broadcasting when the key is released
-StopBroadcast(key)
-{
-    ; Get the list of all open Trove windows
-    WinGet, id, list, %TargetWindowTitle%
-    
-    ; Get the ID of the currently active window (so we don't send keys twice to it)
-    WinGetActiveTitle, activeWindowTitle
-
-    Loop, %id%
-    {
-        this_id := id%A_Index%
-
-        ; Check if the window is the currently active window
-        WinGetTitle, title, ahk_id %this_id%
-        if (title != activeWindowTitle)
-        {
-            ; Send the key up to the window (release key)
-            ControlSend,, {%key% up}, ahk_id %this_id%
-        }
-    }
-}
-
-
-*/
-
-; Crash Detection Controls
-StartCrashDetection:
-    if (CrashDetectionRunning) {
-        MsgBox, Crash detection is already running!
-        return
-    }
-    
-    CrashDetectionRunning := true
-    SetTimer, CrashDetectionTimer, %CrashCheckInterval%
-    GuiControl,, StatusText, Status: Crash detection started
-return
-
-StopCrashDetection:
-    CrashDetectionRunning := false
-    SetTimer, CrashDetectionTimer, Off
-    GuiControl,, StatusText, Status: Crash detection stopped
-return
-
-; Timer function for crash detection
-CrashDetectionTimer:
-    if (CrashDetectionRunning) {
-        DetectAndFixCrashes()
-    }
-return
-
-; Function to show current window status
-ShowWindowStatus:
-    StatusText := "Window Status Report:`n`n"
-    
-    Loop, % AccountNumbers.MaxIndex() {
-        accountNum := AccountNumbers[A_Index]
-        email := Emails[A_Index]
-        state := WindowStates[A_Index]
-        windowId := FindWindowByAccount(accountNum)
-        
-        StatusText .= "Account " . accountNum . " (" . email . "):`n"
-        StatusText .= "  State: " . state . "`n"
-        
-        if (windowId) {
-            StatusText .= "  Window: Found (ID: " . windowId . ")`n"
-        } else {
-            StatusText .= "  Window: Not found`n"
-        }
-        StatusText .= "`n"
-    }
-    
-    ; Add crash detection status
-    StatusText .= "Crash Detection: " 
-    if (CrashDetectionRunning) {
-        StatusText .= "Running (checks every " . (CrashCheckInterval/1000) . "s)"
-    } else {
-        StatusText .= "Stopped"
-    }
-    
-    MsgBox, 0, Window Status, %StatusText%
-return
+; Removed crash detection and window status functionality as requested
 
 ; Hotkey to force quit (Ctrl + Q)
 ^q::ExitApp
-
 
 
