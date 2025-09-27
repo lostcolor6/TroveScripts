@@ -130,6 +130,9 @@ AutoJump := false
 AntiAFKCheck := false
 AutoJumpCheck := false
 
+; Prevent any automatic execution
+return
+
 ; Function to rename a Trove window
 RenameWindow(windowId, accountNumber) {
     newTitle := "Trove - Account " . accountNumber
@@ -297,8 +300,7 @@ LoginSingleAccount(accountIndex) {
     
     ; Input email
     SetKeyDelay, 10, 10
-    emailEscaped := StrReplace(email, "@", "{@}")
-    ControlSend,, %emailEscaped%, %LoginWindowTitle%
+    Send, %email%
     Sleep, 500 ; Reduced wait time
     
     ; Debug: Moving to password field
@@ -431,8 +433,7 @@ StartScript:
         ; Input the email
         email := Emails[A_Index]
         SetKeyDelay, 10, 10
-        emailEscaped := StrReplace(email, "@", "{@}")
-        ControlSend,, %emailEscaped%, %LoginWindowTitle%
+        Send, %email%
         Sleep, 500 ; Reduced delay
 
         ; Move focus to password field
