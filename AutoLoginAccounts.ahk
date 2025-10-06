@@ -2,6 +2,7 @@
 ClientWindowTitle := "Glyph"
 LoginWindowTitles := ["Glyph Login", "Glyph Anmeldung", "Connexion à Glyph", "Вход в систему Glyph", "Inicio de sesión de Glyph", "Login da Glyph", "Glyph 로그인", "登录 Glyph"]
 TargetWindowTitle := "Trove"
+TargetWindowTitleRenamed := "TroveAcc"
 
 ; Define account credentials from txt file(email and password for multiple accounts)
 
@@ -115,7 +116,7 @@ Gui, Add, Text, x20 y180 w280 h20, Press Ctrl + Q to force exit
 
 Gui, Tab ; End tab creation
 
-Gui, Show, w800 h520, Trove Auto Login Manager
+Gui, Show, w800 h520, AutoLoginManager
 
 ; Variable to control the loop (starts as false initially)
 ScriptRunning := false
@@ -135,14 +136,14 @@ return
 
 ; Function to rename a Trove window
 RenameWindow(windowId, accountNumber) {
-    newTitle := "Trove - Account " . accountNumber
+    newTitle := "TroveAcc" . accountNumber
     WinSetTitle, ahk_id %windowId%, , %newTitle%
     return newTitle
 }
 
 ; Function to find window by account number
 FindWindowByAccount(accountNumber) {
-    targetTitle := "Trove - Account " . accountNumber
+    targetTitle := "TroveAcc" . accountNumber
     WinGet, windowId, ID, %targetTitle%
     if (windowId) {
         return windowId
@@ -151,6 +152,9 @@ FindWindowByAccount(accountNumber) {
 }
 
 ; Removed crash detection and auto re-login functions as requested
+
+
+
 
 
 ;AUTO-OPEN
@@ -592,7 +596,7 @@ ShowDesktopInfo:
     TaskbarHeight := FullHeight - WorkHeight
     
     ; Get current Trove window count
-    WinGet, id, list, %TargetWindowTitle%
+    WinGet, id, list, %TargetWindowTitleRenamed%
     WindowCount := id
     
     ; Show information dialog
@@ -650,7 +654,7 @@ AntiAFK:
 while AntiAFKRunning
     {
         ; Check if the target window exists
-        WinGet, id, list, %TargetWindowTitle%
+        WinGet, id, list, %TargetWindowTitleRenamed%
         Loop, %id%
         {
             this_id := id%A_Index%
