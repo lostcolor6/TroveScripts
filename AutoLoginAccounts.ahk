@@ -54,6 +54,55 @@ ClickCoords := [1000, 20, 1000, 150, 1000, 100]
 WaitTime := 1000
 LongWaitTime := 2000
 
+; --- Load settings from INI (override defaults) ---
+; settings.ini is expected in the same folder as this script; change path if needed
+SettingsPath := A_ScriptDir "\\settings.ini"
+
+; default values (will be overridden by INI if present)
+GameModsPath := "C:\\Program Files (x86)\\Glyph\\Games\\Trove\\Live\\mods"
+ReducedModsPath := A_ScriptDir "\\mods_reduced"
+SwapMode := "junction"  ; "junction" (fast) or "copy"
+BackupModsPath := ""
+
+; CFG swapping defaults
+CFGpath := A_ScriptDir "\\Trove.cfg"
+ReducedCFGpath := A_ScriptDir "\\Trove_reduced.cfg"
+BackupCFGPath := ""
+
+; Attempt to read the INI file and override defaults
+if FileExist(SettingsPath) {
+    IniRead, tmp, %SettingsPath%, settings, GameModsPath, %GameModsPath%
+    if (tmp != "")
+        GameModsPath := tmp
+
+    IniRead, tmp, %SettingsPath%, settings, ReducedModsPath, %ReducedModsPath%
+    if (tmp != "")
+        ReducedModsPath := tmp
+
+    IniRead, tmp, %SettingsPath%, settings, SwapMode, %SwapMode%
+    if (tmp != "")
+        SwapMode := tmp
+
+    IniRead, tmp, %SettingsPath%, settings, CFGpath, %CFGpath%
+    if (tmp != "")
+        CFGpath := tmp
+
+    IniRead, tmp, %SettingsPath%, settings, ReducedCFGpath, %ReducedCFGpath%
+    if (tmp != "")
+        ReducedCFGpath := tmp
+
+    IniRead, tmp, %SettingsPath%, settings, EnableModSwapping, 1
+    EnableModSwapping := (tmp = "1")
+
+    IniRead, tmp, %SettingsPath%, settings, EnableCFGSwapping, 1
+    EnableCFGSwapping := (tmp = "1")
+} else {
+    ; defaults to enabled
+    EnableModSwapping := true
+    EnableCFGSwapping := true
+}
+
+
 ; Create a modern GUI window with tabs
 Gui, Add, Tab3, x10 y10 w780 h500 vMainTabs, Accounts|Settings|Tools
 
@@ -375,6 +424,45 @@ StartScript:
     ScriptRunning := true
     GuiControl,, StatusText, Status: Logging in to all accounts
 
+    ; Attempt to swap mods before starting the login loop
+    if (EnableModSwapping) {
+        if (FileExist(GameModsPath) && FileExist(ReducedModsPath)) {
+            BackupModsPath := SwapMods(GameModsPath, ReducedModsPath, SwapMode)
+            if (BackupModsPath = "") {
+                MsgBox, 48, Mods Swap, Failed to swap mods. Aborting start.
+                ScriptRunning := false
+                GuiControl,, StatusText, Status: Swap failed - Aborted
+                return
+            } else {
+                GuiControl,, StatusText, Status: Mods swapped to reduced set
+            }
+        } else {
+            GuiControl,, StatusText, Status: Mods swap skipped (paths missing)
+        }
+    }
+
+    ; Swap CFG if enabled
+    if (EnableCFGSwapping) {
+        if (FileExist(CFGpath) && FileExist(ReducedCFGpath)) {
+            BackupCFGPath := SwapCFG(CFGpath, ReducedCFGpath)
+            if (BackupCFGPath = "") {
+                MsgBox, 48, CFG Swap, Failed to swap CFG. Aborting start.
+                ScriptRunning := false
+                GuiControl,, StatusText, Status: CFG swap failed - Aborted
+                ; try to restore mods if we swapped them
+                if (BackupModsPath != "") {
+                    RestoreMods(GameModsPath, BackupModsPath)
+                    BackupModsPath := ""
+                }
+                return
+            } else {
+                GuiControl,, StatusText, Status: CFG swapped to reduced file
+            }
+        } else {
+            GuiControl,, StatusText, Status: CFG swap skipped (files missing)
+        }
+    }
+
     ; Start the login process when "Start Script" is clicked
     Loop, % Emails.MaxIndex()  ; Loop through all accounts
     {
@@ -489,17 +577,143 @@ StartScript:
     }
     
     GuiControl,, StatusText, Status: All accounts processed
+
+    ; Restore mods after finishing
+    if (BackupModsPath != "") {
+        RestoreMods(GameModsPath, BackupModsPath)
+        BackupModsPath := ""
+        GuiControl,, StatusText, Status: Mods restored
+    }
+
+    ; Restore CFG after finishing
+    if (BackupCFGPath != "") {
+        RestoreCFG(CFGpath, BackupCFGPath)
+        BackupCFGPath := ""
+        GuiControl,, StatusText, Status: CFG restored
+    }
 return
+
+; --- Mods swap/restore helpers ---
+SwapMods(gameModsPath, reducedModsPath, mode := "junction") {
+    ; Returns backup path on success, empty string on failure
+    ; Create a timestamped backup and either create a junction or copy files
+    FormatTime, ts, %A_Now%, yyyyMMdd_HHmmss
+    backupPath := gameModsPath . "_backup_" . ts
+
+    ; Move original mods to backup
+    FileMoveDir, %gameModsPath%, %backupPath%
+    if (ErrorLevel) {
+        MsgBox, 48, SwapMods, Failed to move original mods to backup:`n%backupPath%`nErrorLevel=%ErrorLevel%
+        return ""
+    }
+
+    if (mode = "junction") {
+        ; Create directory junction: mklink /J "gameModsPath" "reducedModsPath"
+        com := ComSpec
+        dq := Chr(34) ; double-quote character
+        ; Build command safely to avoid quoting issues or hidden characters
+        cmd := com . " /c mklink /J " . dq . gameModsPath . dq . " " . dq . reducedModsPath . dq
+        RunWait, %cmd%, , Hide
+        if (ErrorLevel) {
+            ; restore original
+            FileMoveDir, %backupPath%, %gameModsPath%
+            MsgBox, 48, SwapMods, Failed to create junction. Restored original mods.`nErrorLevel=%ErrorLevel%
+            return ""
+        }
+    } else {
+        ; Copy reduced mods into place
+        FileCopyDir, %reducedModsPath%, %gameModsPath%
+        if (ErrorLevel) {
+            FileMoveDir, %backupPath%, %gameModsPath%
+            MsgBox, 48, SwapMods, Failed to copy reduced mods into place. Restored original.`nErrorLevel=%ErrorLevel%
+            return ""
+        }
+    }
+
+    return backupPath
+}
+
+RestoreMods(gameModsPath, backupPath) {
+    ; Remove the current mods (junction or copied dir) and restore backup
+    ; First, try to remove the mods dir/junction
+    com := ComSpec
+    dq := Chr(34)
+    cmd := com . " /c rmdir " . dq . gameModsPath . dq
+    RunWait, %cmd%, , Hide
+    if (ErrorLevel) {
+        MsgBox, 48, RestoreMods, Failed to remove current mods directory/junction:`n" . gameModsPath . "`nErrorLevel=%ErrorLevel%
+        return false
+    }
+
+    ; Move backup back
+    FileMoveDir, %backupPath%, %gameModsPath%
+    if (ErrorLevel) {
+        MsgBox, 48, RestoreMods, Failed to move backup back to mods:`n" . backupPath . " -> " . gameModsPath . "`nErrorLevel=%ErrorLevel%
+        return false
+    }
+
+    return true
+}
+
+; Swap a single CFG file: move original to backup and copy reduced into place
+SwapCFG(cfgPath, reducedCfgPath) {
+    FormatTime, ts, %A_Now%, yyyyMMdd_HHmmss
+    backup := cfgPath . ".backup." . ts
+
+    ; Move original to backup
+    FileMove, %cfgPath%, %backup%
+    if (ErrorLevel) {
+        MsgBox, 48, SwapCFG, Failed to backup original CFG:`n%cfgPath%`nErrorLevel=%ErrorLevel%
+        return ""
+    }
+
+    ; Copy reduced cfg into place
+    FileCopy, %reducedCfgPath%, %cfgPath%
+    if (ErrorLevel) {
+        ; try to restore original
+        FileMove, %backup%, %cfgPath%
+        MsgBox, 48, SwapCFG, Failed to copy reduced CFG into place. Restored original.`nErrorLevel=%ErrorLevel%
+        return ""
+    }
+
+    return backup
+}
+
+; Restore single CFG from backup
+RestoreCFG(cfgPath, backupPath) {
+    ; Remove current cfg if exists
+    if (FileExist(cfgPath))
+        FileDelete, %cfgPath%
+
+    ; Move backup back
+    FileMove, %backupPath%, %cfgPath%
+    if (ErrorLevel) {
+        MsgBox, 48, RestoreCFG, Failed to restore CFG from backup:`n%backupPath% -> %cfgPath%`nErrorLevel=%ErrorLevel%
+        return false
+    }
+
+    return true
+}
 
 ; Function to handle stopping the script
 StopScript:
     ScriptRunning := false ; Stop the loop
     GuiControl,, StatusText, Status: Script stopped
-    
+
     ; Reset all account statuses to offline
     Loop, % Emails.MaxIndex() {
         GuiControl,, AccStatus%A_Index%, Offline
         WindowStates[A_Index] := "offline"
+    }
+
+    ; Ensure mods are restored when script stops
+    if (BackupModsPath != "") {
+        ; Protect against unexpected errors during restore
+        ok := RestoreMods(GameModsPath, BackupModsPath)
+        if (ok)
+            BackupModsPath := ""
+        else
+            MsgBox, 48, StopScript, Failed to restore mods automatically. Please restore manually.
     }
 return
 
